@@ -1,6 +1,7 @@
 # ha-cbus2mqtt (IAM SYSTEMS)
 
-Private/internal fork of [MtSamsonite/ha-cbus2mqtt](https://github.com/MtSamsonite/ha-cbus2mqtt) **0.6.0**.
+Public IAM SYSTEMS fork of [MtSamsonite/ha-cbus2mqtt](https://github.com/MtSamsonite/ha-cbus2mqtt) **0.6.0**.
+Repo: https://github.com/JoshKelleway/ha-cbus2mqtt-iam
 
 Adds a confirm-and-wait send queue in libcbus so Home Assistant can fire 5+
 C-Bus lights in one action without the CNI dropping packets
@@ -23,7 +24,8 @@ run on the asyncio loop and that deadlocks.
 
 ## Install (HAOS)
 
-1. Push this repo to GitHub, then add that repository URL in HA → Settings → Add-ons → Add-on Store → Repositories.
+1. Add this repository in HA → Settings → Add-ons → Add-on Store → Repositories:
+   `https://github.com/JoshKelleway/ha-cbus2mqtt-iam`
 2. Install **cbus2mqtt (IAM)** (`cbus2mqtt_iam`). First start builds the image.
 3. Copy MQTT/CNI options from the old MtSamsonite addon.
 4. Start IAM addon, stop the old `a9f92ca1_cbus2mqtt` addon (only one CNI TCP session).

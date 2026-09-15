@@ -1,0 +1,147 @@
+--- /tmp/cbus-hotpatch/pciprotocol.py.orig	2026-09-15 12:55:38.331019780 +1000
++++ /tmp/cbus-hotpatch/pciprotocol.py	2026-09-15 12:57:02.214505361 +1000
+@@ -18,8 +18,8 @@
+ from __future__ import absolute_import
+ from __future__ import print_function
+ 
+-from asyncio import (CancelledError, Future, Lock, create_task,
+-                     get_running_loop, run, sleep)
++from asyncio import (CancelledError, Future, Lock, Queue, create_task,
++                     get_running_loop, run, sleep, wait_for)
+ from asyncio.transports import WriteTransport
+ from datetime import datetime
+ import logging
+@@ -80,6 +80,11 @@
+         self._timesync_frequency = timesync_frequency
+         self._connection_lost_future = connection_lost_future
+         self._handle_clock_requests = bool(handle_clock_requests)
++        # Confirm-and-wait TX queue (hotpatch). One confirmed packet in flight.
++        self._tx_queue = None  # type: Optional[Queue]
++        self._tx_task = None
++        self._in_flight_code = None  # type: Optional[bytes]
++        self._in_flight_future = None  # type: Optional[Future]
+ 
+     def connection_made(self, transport: WriteTransport) -> None:
+         """
+@@ -89,7 +94,12 @@
+ 
+         """
+         self._transport = transport
+-        self.pci_reset()        
++        self._tx_queue = Queue()
++        self._tx_task = create_task(self._tx_loop())
++        logger.warning(
++            'cbus tx-queue hotpatch active '
++            '(confirm-and-wait, 1 in flight, 1 retry)')
++        self.pci_reset()
+         create_task(self.req_status())
+         if self._timesync_frequency:
+             create_task(self.timesync())
+@@ -97,6 +107,14 @@
+     def connection_lost(self, exc: Optional[Exception]) -> None:
+         logger.debug("Connection lost")
+         self._transport = None
++        if self._tx_task is not None:
++            self._tx_task.cancel()
++            self._tx_task = None
++        fut = self._in_flight_future
++        if fut is not None and not fut.done():
++            fut.set_result(False)
++        self._in_flight_future = None
++        self._in_flight_code = None
+         self._connection_lost_future.set_result(True)
+ 
+     def handle_cbus_packet(self, p: BasePacket) -> None:
+@@ -157,6 +175,10 @@
+         :param success: True if the command was successful, False otherwise.
+         """
+         logger.debug(f'recv: confirmation: code = {code}, success = {success}')
++        fut = self._in_flight_future
++        if (fut is not None and not fut.done() and
++                self._in_flight_code == code):
++            fut.set_result(bool(success))
+ 
+     def on_reset(self):
+         """
+@@ -286,6 +308,10 @@
+ 
+         """
+         logger.debug('recv: PCI cannot accept data')
++        fut = self._in_flight_future
++        if fut is not None and not fut.done():
++            # Single in-flight command: a `!` belongs to that write.
++            fut.set_result(False)
+ 
+     def on_pci_power_up(self):
+         """
+@@ -378,17 +404,67 @@
+         if confirmation:
+             conf_code = self._get_confirmation_code()
+             cmd += conf_code
+-
+-            # TODO: implement proper handling of confirmation codes.
+         else:
+             conf_code = None
+ 
+         cmd += END_COMMAND
+         logger.debug(f'send: {cmd!r}')
+ 
+-        transport.write(cmd)
++        if conf_code is None or self._tx_queue is None:
++            transport.write(cmd)
++            return conf_code
++
++        # Confirmed packets are serialized by _tx_loop so the CNI buffer
++        # cannot be overflowed by MQTT bursts.
++        self._tx_queue.put_nowait((cmd, conf_code))
+         return conf_code
+ 
++    async def _tx_loop(self):
++        """Send confirmed C-Bus packets one at a time; wait/retry on confirm."""
++        while True:
++            try:
++                cmd, conf_code = await self._tx_queue.get()
++            except CancelledError:
++                break
++
++            transport = self._transport
++            if transport is None:
++                continue
++
++            confirmed = False
++            loop = get_running_loop()
++            for attempt in range(2):
++                fut = loop.create_future()
++                self._in_flight_code = conf_code
++                self._in_flight_future = fut
++                logger.debug(
++                    f'tx-queue attempt {attempt} code={conf_code!r}: {cmd!r}')
++                try:
++                    transport.write(cmd)
++                    ok = await wait_for(fut, 0.35)
++                except CancelledError:
++                    self._in_flight_code = None
++                    self._in_flight_future = None
++                    raise
++                except Exception as exc:
++                    # TimeoutError on 3.10 is asyncio.TimeoutError
++                    logger.warning(
++                        'C-Bus confirm wait failed '
++                        f'(code={conf_code!r} attempt={attempt}): {exc!r}')
++                    ok = False
++                finally:
++                    self._in_flight_code = None
++                    self._in_flight_future = None
++
++                if ok:
++                    confirmed = True
++                    break
++                await sleep(0.05)
++
++            if not confirmed:
++                logger.error(
++                    f'C-Bus command dropped after retry (code={conf_code!r})')
++
+     def pci_reset(self):
+         """
+         Performs a full reset of the PCI.

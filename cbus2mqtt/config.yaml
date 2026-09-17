@@ -1,8 +1,8 @@
 name: "cbus2mqtt (IAM)"
 description: "IAM fork of cbus2mqtt/cmqttd with confirm-and-wait CNI send queue"
 version: "0.6.1-iam"
-slug: "cbus2mqtt_iam"
-url: "https://github.com/JoshKelleway/ha-cbus2mqtt-iam"
+slug: "iam_cbus2mqtt"
+url: "https://github.com/IAM-SYSTEMS/iam-ha-cbus2mqtt"
 startup: "application"
 boot: "auto"
 init: false

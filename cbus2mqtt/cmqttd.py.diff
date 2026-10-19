@@ -1,0 +1,13 @@
+--- cmqttd.py.orig
++++ cmqttd.py
+@@ -274,8 +274,8 @@
+                             duration: int, level: int):
+         """Relays a lighting-ramp event from CBus to MQTT."""
+         self.publish(state_topic(group_addr), {
+-            'state': 'ON',
+-            'brightness': level,
++            'state': 'OFF' if level == 0 else 'ON',
++            'brightness': 0 if level == 0 else level,
+             'transition': duration,
+             'cbus_source_addr': source_addr,
+         })

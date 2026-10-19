@@ -9,7 +9,8 @@ C-Bus lights in one action without the CNI dropping packets
 
 Upstream image is frozen (`mtsamsonite/cbus2mqtt-{arch}:0.6.0`, includes
 [PR #31](https://github.com/micolous/cbus/pull/31)). This addon **builds on
-the HA host** (no `image:` key) and overlays `cbus2mqtt/pciprotocol.py`.
+the HA host** (no `image:` key) and overlays `cbus2mqtt/pciprotocol.py`
+and `cbus2mqtt/cmqttd.py`.
 
 ## Behaviour
 
@@ -18,6 +19,7 @@ the HA host** (no `image:` key) and overlays `cbus2mqtt/pciprotocol.py`.
 - Unconfirmed / PCI reset packets still write immediately
 - Log line: `cbus tx-queue confirm-and-wait active (1 in flight, 1 retry)`
 - MQTT state is still published immediately (optimistic). Fix later if needed.
+- A C-Bus scene that turns lights off is a lighting ramp to level 0, not a lighting-off event. `cmqttd.py` publishes that ramp as `state: OFF`. Any other level stays `state: ON`.
 
 Do **not** block `_send()` with `threading.Event.wait()` — MQTT callbacks
 run on the asyncio loop and that deadlocks.
@@ -30,8 +32,8 @@ run on the asyncio loop and that deadlocks.
 3. Copy MQTT/CNI options from the old MtSamsonite addon.
 4. Start IAM addon, stop the old `a9f92ca1_cbus2mqtt` addon (only one CNI TCP session).
 5. Confirm log marker + 5-light physical test.
-6. Remove `/share/cbus/pciprotocol.py` if a previous hotpatch is present, so
-   the old entrypoint hook cannot overlay this image.
+6. Remove `/share/cbus/pciprotocol.py` and `/share/cbus/cmqttd.py` if a previous hotpatch is present, so
+   an old entrypoint hook cannot overlay this image.
 
 Same options as upstream 0.6.0 (`cbus_connection_string`, MQTT, etc.).
 
@@ -45,10 +47,13 @@ task **gardine-bronte**.
 ```
 cbus2mqtt/
   Dockerfile          FROM mtsamsonite/cbus2mqtt-${BUILD_ARCH}:0.6.0 + COPY
-  config.yaml         version 0.6.1-iam, no image: key
+  config.yaml         version 0.6.2-iam, no image: key
   pciprotocol.py      patched drop-in
   pciprotocol.py.orig stock 0.6.0 / PR #31
   pciprotocol.py.diff unified diff
+  cmqttd.py           scene ramp-to-zero publishes MQTT off
+  cmqttd.py.orig      stock 0.6.0 daemon
+  cmqttd.py.diff      unified diff
 ```
 
 ## License

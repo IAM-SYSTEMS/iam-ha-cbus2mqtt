@@ -5,3 +5,6 @@ FROM mtsamsonite/cbus2mqtt-${BUILD_ARCH}:0.6.0
 # Confirm-and-wait send queue. Replaces libcbus PCIProtocol._send firehose.
 # Source is this addon's pciprotocol.py (patched 0.6.0 / PR #31 file).
 COPY pciprotocol.py /usr/lib/python3.10/site-packages/cbus/protocol/pciprotocol.py
+
+# Scene ramp to level 0 must be MQTT state OFF. Stock cmqttd publishes ON.
+COPY cmqttd.py /usr/lib/python3.10/site-packages/cbus/daemon/cmqttd.py
